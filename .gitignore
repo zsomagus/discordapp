@@ -1,3 +1,7 @@
 astro/ 
 __pycache__/ 
 *.pyc 
+Új mappa/
+import_check.py
+importok.txt
+modulvizsgalo.py
