@@ -10,8 +10,7 @@ from PyQt5.QtGui import QPixmap
 from PyQt5.QtCore import QDate, QTime
 
 # Modulok importálása - Tiszta struktúra, körkörös importok nélkül!
-from modulok import astro_core, prashna_core, elemzes, grafika, 
- config, varshaphala_tools
+from modulok import astro_core, prashna_core, elemzes, grafika, config, varshaphala_tools
 from gui import gui_helpers
 
 app = QApplication(sys.argv)

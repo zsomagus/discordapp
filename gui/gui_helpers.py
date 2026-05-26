@@ -23,12 +23,12 @@ def get_output_folder() -> str:
 # ---------------------------------------------------------\
 def get_birth_data(name1, date1, time1, lat1, lon1, timezoneSelector) -> dict:
     return {
-        \"name\": name1.text(),
-        \"date\": date1.date().toString(\"yyyy-MM-dd\"),
-        \"time\": time1.time().toString(\"HH:mm\"),
-        \"lat\": lat1.text(),
-        \"lon\": lon1.text(),
-        \"timezone\": timezoneSelector.currentText(),
+        "name": name1.text(),
+        "date": date1.date().toString("yyyy-MM-dd"),
+        "time": time1.time().toString("HH:mm"),
+        "lat": lat1.text(),
+        "lon": lon1.text(),
+        "timezone": timezoneSelector.currentText(),
     }
 
 

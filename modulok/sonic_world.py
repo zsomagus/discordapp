@@ -485,7 +485,7 @@ def generate_sonic_melodic_wav_by_source(bd: dict, res: dict, source_string: str
     output_path_mid = os.path.join(OUTPUT_DIR, f"{safe_name}_sonic_jyotish_score.mid")
 
     # WAV Mentés
-    with wave.open(output_path_wav, \"w\") as wf:
+    with wave.open(output_path_wav, "w") as wf:
         wf.setnchannels(1)
         wf.setsampwidth(2)
         wf.setframerate(SR)

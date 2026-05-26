@@ -435,4 +435,4 @@ def build_chart_data(
         "purushartha_list": purushartha_list,
     }
 
-return "\n".join(elemzes_riport)
+    return "\n".join(elemzes_riport)
