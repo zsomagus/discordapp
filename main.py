@@ -1,17 +1,11 @@
+# main.py
 import sys
-from PyQt5.QtWidgets import QApplication
-from gui import main_gui 
-from modulok.astro_core import get_chart_data
-import pendulum
+import os
 
-app = QApplication(sys.argv)
+# GUI mappa hozzáadása a Python útvonalhoz
+sys.path.append(os.path.join(os.path.dirname(__file__), "gui"))
 
-# aktuális időpont efemerida
-now = pendulum.now("Europe/Budapest")
-planet_positions = get_chart_data()  # vagy last_planet_positions(now)
+from gui.gui_main import start_gui
 
-# átadás a GUI‑nak
-window = main_gui(planet_positions)
-window.show()
-
-sys.exit(app.exec_())
+if __name__ == "__main__":
+    start_gui()

@@ -1,7 +1,7 @@
 # Szonifikált Horoszkóp Program
 
 Magyar leírás A program alapja a Hindu-Védikus asztrológia, csakráink és a Solfeggio frekvenciák.
-
+ 
 Születési adataink megadása után a program elkészíti horoszkópunkat. A rasi születési horoszkópunk mellett részhoroszkópokat is készít.
 
 A közepébe beilleszti a születési yantránkat, mely segít a meditálásban, ami a Hold fázisaiból adódik. Ez egyedülálló: más asztrológiai programok nem mutatják meg a yantrákat (legalábbis én nem tudok ilyenről).

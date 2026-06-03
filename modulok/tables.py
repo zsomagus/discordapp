@@ -438,6 +438,23 @@ planet_abbreviations = {
     "Ketu": "Ke",
     "ASC": "As",
 }
+
+
+sign_positions = {
+    "Aries":        (1, 0),
+    "Taurus":       (2, 0),
+    "Gemini":       (3, 0),
+    "Cancer":       (3, 1),
+    "Leo":          (3, 2),
+    "Virgo":        (3, 3),
+    "Libra":        (2, 3),
+    "Scorpio":      (1, 3),
+    "Sagittarius":  (0, 3),
+    "Capricorn":    (0, 2),
+    "Aquarius":     (0, 1),
+    "Pisces":       (0, 0),
+}
+
 # Házpozíciók (dél-indiai rendszer, 1-től 12-ig)
 house_positions = {
     1: (1, 3),  # Kos

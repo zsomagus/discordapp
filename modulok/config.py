@@ -4,6 +4,10 @@ from pathlib import Path
 import pandas as pd
 from countryinfo import CountryInfo
 import pendulum  # ⏳ új: pendulum a datetime helyett
+import timezonefinder
+
+_tf = timezonefinder.TimezoneFinder()
+
 # Alap elérési utak
 BASE_DIR = Path(__file__).resolve().parent.parent
 STATIC_DIR = BASE_DIR / "static"
@@ -197,4 +201,19 @@ def fill_coordinate_entries(city_name: str, lat_entry, lon_entry) -> bool:
         lon_entry.insert(0, str(lon))
         return True
 
+
     return False
+
+# -----------------------------
+# Időzóna felismerés koordinátákból
+# -----------------------------
+
+def get_timezone_from_coordinates(lat: float, lon: float) -> str | None:
+    """
+    Koordinátákból időzóna meghatározása.
+    """
+    try:
+        tz = _tf.timezone_at(lat=lat, lng=lon)
+        return tz
+    except Exception:
+        return None

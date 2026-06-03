@@ -1,0 +1,11 @@
+sonicjh/
+ |
+ |-gui/
+ |  |--gui_main.py
+ |
+ |--modulok/
+ |    |-astro_core.py
+ |    |-chart_drawer.py
+ |
+ |--static/
+       |-saved_persons.json

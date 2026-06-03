@@ -1,25 +1,31 @@
 # modulok/varshaphala_tools.py
 
 import pendulum
-from jyotishganit import calculate_birth_chart
+import swisseph as swe
 from modulok import astro_core
+
+def get_sun_sidereal_longitude(dt_utc):
+    """Visszaadja a Nap sziderikus hosszúságát Swiss Ephemeris alapján."""
+    jd = swe.julday(dt_utc.year, dt_utc.month, dt_utc.day,
+                    dt_utc.hour + dt_utc.minute/60 + dt_utc.second/3600)
+
+    swe.set_sid_mode(swe.SIDM_LAHIRI)
+    lon, lat, dist, speed = swe.calc_ut(jd, swe.SUN)
+    ayan = swe.get_ayanamsa(jd)
+    return (lon - ayan) % 360
+
 
 def find_solar_return_datetime(birth_dt, age, lat, lon):
     """
     Megkeresi azt az időpontot, amikor a Nap visszatér
-    a születési hosszúságra (Varshaphala).
+    a születési sziderikus hosszúságra (Varshaphala).
     """
 
-    # 1) Születési Nap pozíció
-    birth_chart = calculate_birth_chart(
-        birth_date=birth_dt.datetime(),
-        latitude=lat,
-        longitude=lon,
-        timezone_offset=birth_dt.utcoffset().total_seconds() / 3600
-    )
-    target_long = birth_chart.planet_data["Sun"].longitude
+    # 1) Születési Nap sziderikus hosszúsága
+    birth_dt_utc = birth_dt.in_timezone("UTC")
+    target_long = get_sun_sidereal_longitude(birth_dt_utc)
 
-    # 2) Célév
+    # 2) Célév (születés + age)
     approx = birth_dt.add(years=age)
 
     # 3) Iteráció ±48 órában, 10 perces lépésekben
@@ -28,15 +34,9 @@ def find_solar_return_datetime(birth_dt, age, lat, lon):
 
     for minutes in range(-48 * 60, 48 * 60, 10):
         test_dt = approx.add(minutes=minutes)
+        test_dt_utc = test_dt.in_timezone("UTC")
 
-        chart = calculate_birth_chart(
-            birth_date=test_dt.datetime(),
-            latitude=lat,
-            longitude=lon,
-            timezone_offset=test_dt.utcoffset().total_seconds() / 3600
-        )
-
-        sun_long = chart.planet_data["Sun"].longitude
+        sun_long = get_sun_sidereal_longitude(test_dt_utc)
         diff = abs((sun_long - target_long + 180) % 360 - 180)
 
         if diff < best_diff:
@@ -48,25 +48,29 @@ def find_solar_return_datetime(birth_dt, age, lat, lon):
 
 def compute_varshaphala_chart(birth_dt, age, lat, lon):
     """
-    Visszaadja a Varshaphala horoszkóp teljes adatait.
+    Visszaadja a Varshaphala horoszkóp teljes adatait
+    astro_core.generate_chart() formátumban.
     """
 
     solar_return_dt = find_solar_return_datetime(birth_dt, age, lat, lon)
+    dt = solar_return_dt.in_timezone("UTC")
 
-    chart = calculate_birth_chart(
-        birth_date=solar_return_dt.datetime(),
-        latitude=lat,
-        longitude=lon,
-        timezone_offset=solar_return_dt.utcoffset().total_seconds() / 3600
+    chart = astro_core.generate_chart(
+        name=f"Varshaphala {age}",
+        year=dt.year,
+        month=dt.month,
+        day=dt.day,
+        hour=dt.hour,
+        minute=dt.minute,
+        lat=lat,
+        lng=lon,
     )
 
     return {
         "datetime": solar_return_dt,
         "chart": chart,
-        "planet_data": chart.planet_data,
-        "tithi": chart.panchanga.tithi,
-        "nakshatra": chart.panchanga.nakshatra,
-        "yoga": chart.panchanga.yoga,
-        "karana": chart.panchanga.karana,
-        "vaara": chart.panchanga.vaara,
+        "planet_data": chart["planets"],
+        "tithi": chart["tithi"],
+        "ascendant": chart["ascendant"],
+        "houses": chart["houses"],
     }

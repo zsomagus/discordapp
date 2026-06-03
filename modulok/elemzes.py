@@ -1,428 +1,363 @@
+# modulok/elemzes.py
+
+import os
+import re
+import textwrap
+from pathlib import Path
+
 import pandas as pd
+import pendulum
+import pyttsx3
 from markdown import markdown
 from reportlab.lib.pagesizes import A4
+from reportlab.lib.units import cm
+from reportlab.lib import colors
 from reportlab.pdfgen import canvas
-from modulok.config import BASE_DIR
-from modulok.tables import haz_aspektusok, haz_bolygo_aspektusok
 
-# Házak elérhetők:
-# 📥 Adatbázis betöltése
+from modulok.config import BASE_DIR
+from modulok import astro_core
+from modulok.visuals import generate_visuals_from_summary
+from modulok.tables import haz_aspektusok, haz_bolygo_aspektusok
+from modulok.terkep import generate_karmic_map_svg
+
+# -------------------------------------------------------------------
+# Alap beállítások
+# -------------------------------------------------------------------
+
+OUTPUT_DIR = os.path.expanduser("~/Letöltések/SonicJyotish")
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+# Excel adatbázis betöltése
 excel_path = BASE_DIR / "static" / "asztrológiai_adatbázis.xlsx"
 jegyek_df = pd.read_excel(excel_path, sheet_name="Jegyek")
 hazak_df = pd.read_excel(excel_path, sheet_name="Házak")
 bolygok_df = pd.read_excel(excel_path, sheet_name="Bolygók")
 nakshatra_df = pd.read_excel(excel_path, sheet_name="Nakshatra _ Pada")
 
+# -------------------------------------------------------------------
+# Segédfüggvények – adatbázis alapú szövegek
+# -------------------------------------------------------------------
 
-def load_excel(filename, sheet):
-    path = BASE_DIR / "static" / filename
-    return pd.read_excel(path, sheet_name=sheet)
-
-
-# 🔍 Értelmező függvények
 def get_jegy_info(jegy):
     match = jegyek_df[jegyek_df["Jegy"] == jegy]
     return match.iloc[0]["Tulajdonságok"] if not match.empty else "Ismeretlen jegy."
 
-
 def get_haz_info(haz_szam):
     match = hazak_df[hazak_df["Ház száma"] == haz_szam]
     if not match.empty:
-        return (
-            f"{match.iloc[0]['Tulajdonságok']} "
-            f"– Purushartha: {purushartha_map(haz_szam)}"
-        )
+        return match.iloc[0]["Tulajdonságok"]
     return "Ismeretlen ház."
-
 
 def get_bolygo_info(bolygo):
     match = bolygok_df[bolygok_df["Bolygó"] == bolygo]
     return match.iloc[0]["Tulajdonságok"] if not match.empty else "Ismeretlen bolygó."
 
-
-def get_purushartha(pada):
-    return ["Dharma", "Artha", "Kama", "Moksha"][pada - 1]
-
-
-def get_purushartha_info(haz_szam, pada_szam):
-    return tables.purushartha_map.get(haz_szam, {}).get(
-        pada_szam, ("Ismeretlen", "Nincs leírás")
-    )
-
-
-def get_haz_aspektus(haz_szam):
-    return tables.haz_aspektusok.get(haz_szam, ("Ismeretlen", "Nincs leírás"))
-
-
-def get_haz_bolygo_aspektus(haz_szam):
-    bolygo, leiras = haz_bolygo_aspektusok.get(
-        haz_szam, (None, "Ismeretlen ház vagy nincs leírás.")
-    )
-    if bolygo:
-        return f"{bolygo} – {leiras}"
-    return leiras
-
+def get_purushartha_from_pada(pada):
+    # 1–4: Dharma, Artha, Kama, Moksha
+    mapping = ["Dharma", "Artha", "Kama", "Moksha"]
+    if 1 <= pada <= 4:
+        return mapping[pada - 1]
+    return "Ismeretlen"
 
 def get_nakshatra_info(nakshatra, pada):
     match = nakshatra_df[nakshatra_df["Nakshatra"] == nakshatra]
     if not match.empty:
-        col = f"{pada}. Páda ({get_purushartha(pada)})"
-        return (
-            match.iloc[0][col] if col in match.columns else "Hiányzó pada értelmezés."
-        )
+        col = f"{pada}. Páda ({get_purushartha_from_pada(pada)})"
+        return match.iloc[0].get(col, "Hiányzó pada értelmezés.")
     return "Ismeretlen nakshatra vagy pada."
 
+# -------------------------------------------------------------------
+# Lélek Útiterve – spirituális blokk
+# -------------------------------------------------------------------
 
-# 📝 Szöveg generálása
-def generate_markdown_summary(positions, aspektusok_lista, birth_data=None):
-    ayanamsa = birth_data.get("ayanamsa") if birth_data else None
-    if not ayanamsa:
-        now = pendulum.now("Europe/Budapest")
-        jd = astro_core.swe.julday(now.year, now.month, now.day, 12.0)
-        ayanamsa = astro_core.get_ayanamsa(jd)
+def generate_souls_roadmap(chart):
+    planets = chart.get("planets", {})
+    houses = chart.get("houses", {})
 
-    md = "# 🌠 Asztrológiai Elemzés\n\n"
+    sun = planets.get("Sun", {})
+    saturn = planets.get("Saturn", {})
+    rahu = planets.get("Rahu", {})
+    ketu = planets.get("Ketu", {})
 
-    for bolygo, adat in positions.items():
-        if bolygo == "ASC":
-            continue
+    def fmt_planet(p):
+        sign = p.get("sign", "ismeretlen jegy")
+        deg = p.get("deg", 0)
+        return f"{sign} ({deg:.1f}°)"
 
-        jegy = adat["sign"]
-        haz = adat["house"]
-        nakshatra = adat.get("nakshatra")
-        pada = adat.get("pada")
-        if not nakshatra or not pada:
-            nakshatra, pada = astro_core.calculate_nakshatra(
-                adat["longitude"], ayanamsa, nakshatras
-            )
+    md = "\n---\n\n## 🕉️ A Lélek Útiterve (The Soul's Roadmap)\n\n"
 
-        md += f"## 🔹 {bolygo}\n"
-        md += f"- **Jegy**: {jegy}\n"
-        md += f"- **Ház**: {haz}\n"
-        md += f"- **Nakshatra**: {nakshatra}\n"
-        md += f"- **Pada**: {pada}\n"
-        md += f"- **Tulajdonságok**: {get_bolygo_info(bolygo)}\n"
-        md += f"- **Jegy jellemzői**: {get_jegy_info(jegy)}\n"
-        md += f"- **Ház jellemzői**: {get_haz_info(haz)}\n"
-        md += f"- **Nakshatra értelmezés**: {get_nakshatra_info(nakshatra, pada)}\n\n"
+    # Nap – életcél
+    md += "### ☀️ Nap – Mi a célod?\n"
+    if sun:
+        md += f"A Nap jelenlegi helyzete: **{fmt_planet(sun)}**. "
+        md += "Ez mutatja, hol ragyogsz, hol tudsz önazonosan jelen lenni, "
+        md += "és milyen minőségek mentén tudsz vezetni, alkotni, jelen lenni a világban.\n\n"
+    else:
+        md += "A Nap pozíciója nem elérhető ebben a képletben.\n\n"
 
-    md += "## 🌌 Aspektusok\n"
-    for asp in aspektusok_lista:
-        haz_from = positions[asp["from"]]["house"]
-        bolygo_from = asp["from"]
+    # Szaturnusz – lecke
+    md += "### ♄ Szaturnusz – Mi a lecke?\n"
+    if saturn:
+        md += f"A Szaturnusz helyzete: **{fmt_planet(saturn)}**. "
+        md += "Ez jelöli azokat a területeket, ahol felelősséget, kitartást és türelmet tanulsz. "
+        md += "Itt lassabban érkeznek az eredmények, de amit itt felépítesz, az tartós marad.\n\n"
+    else:
+        md += "A Szaturnusz pozíciója nem elérhető ebben a képletben.\n\n"
 
-        aspektus, leiras = get_haz_aspektus(haz_from)
-        md += f"- **Ház aspektus**: {aspektus} – {leiras}\n"
+    # Rahu–Ketu tengely
+    md += "### ☊☋ Rahu–Ketu tengely – Múlt és jövő\n"
+    if rahu and ketu:
+        md += f"Rahu: **{fmt_planet(rahu)}**, Ketu: **{fmt_planet(ketu)}**. "
+        md += "A Rahu jelzi, merre tart a lélek – azokat a tapasztalatokat, amelyek felé vonzódsz, "
+        md += "még ha ismeretlenek is. A Ketu a hozott múlt, a korábbi életek lenyomata, "
+        md += "ahol már van tapasztalat, de néha túltelítettség is.\n\n"
+    else:
+        md += "A Rahu–Ketu tengely adatai nem teljesek ebben a képletben.\n\n"
 
-        bolygo_aspektus = get_haz_bolygo_aspektus(haz_from, bolygo_from)
-        md += f"- **Ház bolygó-aspektus**: {bolygo_aspektus}\n"
-
-        pada = positions[bolygo_from].get("pada", 1)
-        purushartha, leiras = get_purushartha_info(haz_from, pada)
-        md += f"- **Purushartha**: {purushartha} – {leiras}\n\n"
-
-    # 🕰️ Dasa ciklusok hozzáadása
-    if birth_data:
-        dasa_text = generate_dasa_summary(birth_data)
-        md += "\n## 🕰️ Dasa ciklusok\n"
-        md += dasa_text + "\n"
-
-    for bolygo, adat in positions.items():
-        jegy = adat["sign"]
-        haz = adat["house"]
-        summary_text = md  # vagy bolygóspecifikus részlet
-        vizualis_prompts = generate_visuals_from_summary(summary_text, bolygo, jegy, str(haz))
-        md += f"\n## 🎨 {bolygo} vizuális archetípusai\n"
-        for i, prompt in enumerate(vizualis_prompts, 1):
-            md += f"- Kép {i}: *{prompt}*\n"
+    # Összegzés
+    md += "### 🔮 Összegzés – A jövő iránya\n"
+    md += "A képlet azt mutatja, hogy a lélek útja nem véletlenszerű: "
+    md += "a Nap célja, a Szaturnusz leckéi és a Rahu–Ketu tengely együtt rajzolják ki azt az irányt, "
+    md += "amerre érdemes fejlődnöd. Ha a belső hívást követed, és türelemmel vállalod a tanulást, "
+    md += "a sorsod egyre inkább összhangba kerül a belső igazságoddal.\n\n"
 
     return md
 
+# -------------------------------------------------------------------
+# Markdown elemzés generálása astro_core chartból
+# -------------------------------------------------------------------
 
-def summarize_purusharthas(purushartha_list):
-    count = Counter(purushartha_list)
-    summary = "\n## 🧭 Purushartha Összegzés\n"
-    for p, c in count.items():
-        summary += f"- **{p}**: {c} bolygó kapcsolódik ehhez az életcélhoz\n"
-    return summary
+def generate_markdown_summary_from_chart(chart, meta):
+    """
+    chart: astro_core.generate_chart visszatérési dict
+    meta:  kiegészítő adatok (név, dátum, idő, hely stb.)
+    """
+    planets = chart.get("planets", {})
+    asc = chart.get("ascendant", {})
+    tithi = chart.get("tithi", None)
 
+    md = "# 🌠 Asztrológiai Elemzés\n\n"
 
-# 💾 Mentés Markdown fájlba
-def save_markdown(text, filename="elemzes.md"):
-    with open(filename, "w", encoding="utf-8") as f:
-        f.write(text)
+    # Meta blokk
+    md += f"**Név**: {meta.get('keresztnev', '')} {meta.get('vezeteknev', '')}\n\n"
+    md += f"**Dátum**: {meta.get('date_str', '')}\n\n"
+    md += f"**Idő**: {meta.get('time_str', '')}\n\n"
+    if meta.get("place_str"):
+        md += f"**Hely**: {meta.get('place_str')}\n\n"
+    if tithi is not None:
+        md += f"**Tithi**: {tithi}\n\n"
+    md += f"**Horoszkóp típusa**: {meta.get('horoszkop_nev', 'D1')}\n\n"
 
+    # Ascendens
+    if asc:
+        md += "## 🔹 Ascendens\n"
+        md += f"- **Jegy**: {asc.get('sign', 'ismeretlen')}\n"
+        md += f"- **Fok**: {asc.get('deg', 0):.1f}°\n\n"
 
+    # Bolygók
+    for bolygo, adat in planets.items():
+        sign = adat.get("sign", "ismeretlen")
+        deg = adat.get("deg", 0)
+        nak = adat.get("nakshatra", None)
+        pada = adat.get("pada", None)
 
+        md += f"## 🔹 {bolygo}\n"
+        md += f"- **Jegy**: {sign} ({deg:.1f}°)\n"
 
-def save_analysis_pdf(md_text, person_name):
-    # Fájlnév a személy nevéből
-    safe_name = re.sub(r"[^\w\-]", "_", person_name.strip())
-    filename = f"{safe_name}_elemzes.pdf"
+        # Ház – ha van
+        haz = adat.get("house")
+        if haz is not None:
+            md += f"- **Ház**: {haz}\n"
+            md += f"- **Ház jellemzői**: {get_haz_info(haz)}\n"
 
-    # PDF létrehozása
+        # Nakshatra
+        if nak and pada:
+            md += f"- **Nakshatra**: {nak} – {pada}. páda ({get_purushartha_from_pada(pada)})\n"
+            md += f"- **Nakshatra értelmezés**: {get_nakshatra_info(nak, pada)}\n"
+
+        md += f"- **Bolygó tulajdonságai**: {get_bolygo_info(bolygo)}\n"
+        md += f"- **Jegy jellemzői**: {get_jegy_info(sign)}\n\n"
+
+    # Lélek Útiterve blokk
+    md += generate_souls_roadmap(chart)
+
+    # Vizuális archetípusok – promptok
+    md += "\n---\n\n## 🎨 Vizuális archetípusok\n"
+    md += "_Ezeket a leírásokat másold be egy képgenerátorba (pl. Midjourney, DALL·E, Stable Diffusion)._ \n\n"
+
+    summary_text = md  # teljes szöveg alapján generálunk vizuális promptokat
+    viz_prompts = generate_visuals_from_summary(summary_text, "Összkép", "Rashi", "1")
+    for i, prompt in enumerate(viz_prompts, 1):
+        md += f"- Kép {i}: *{prompt}*\n"
+
+    return md
+
+# -------------------------------------------------------------------
+# PDF generálás – fejléc, lábléc, első oldali kép
+# -------------------------------------------------------------------
+
+def _draw_header_footer(c, width, height):
+    # Fejléc
+    c.setFont("Helvetica-Bold", 14)
+    c.setFillColor(colors.HexColor("#2E4E1F"))
+    c.drawCentredString(width / 2, height - 1.5 * cm, "HINDU–VÉDIKUS")
+    c.drawCentredString(width / 2, height - 2.1 * cm, "ASZTROLÓGIAI ELEMZÉS")
+    c.setStrokeColor(colors.HexColor("#2E4E1F"))
+    c.setLineWidth(2)
+    c.line(2 * cm, height - 2.4 * cm, width - 2 * cm, height - 2.4 * cm)
+
+    # Lábléc
+    c.setFont("Helvetica", 9)
+    c.setFillColor(colors.grey)
+    c.drawCentredString(width / 2, 1.2 * cm, "Készítette: Mucsi Zsombor – Védikus asztrológus")
+
+def save_analysis_pdf(md_text, meta, image_path=None):
+    safe_name = re.sub(r"[^\w\-]", "_", f"{meta.get('keresztnev','')}_{meta.get('vezeteknev','')}".strip())
+    filename = os.path.join(OUTPUT_DIR, f"{safe_name}_elemzes.pdf")
+
     c = canvas.Canvas(filename, pagesize=A4)
     width, height = A4
-    margin = 2 * cm
-    y = height - margin
+    margin_x = 2 * cm
+    text_top = height - 3 * cm  # fejléc alatt
+    y = text_top
 
-    # Szöveg feldarabolása sorokra
-    lines = md_text.split("\n")
+    def new_page():
+        nonlocal y
+        c.showPage()
+        _draw_header_footer(c, width, height)
+        y = text_top
+
+    # Első oldal fejléc + lábléc
+    _draw_header_footer(c, width, height)
+
+    # Ha van kép (Rashi + yantra), tegyük az első oldal jobb felső részére
+    if image_path and os.path.exists(image_path):
+        img_w = 8 * cm
+        img_h = 8 * cm
+        img_x = width - margin_x - img_w
+        img_y = height - 3 * cm - img_h
+        c.drawImage(image_path, img_x, img_y, width=img_w, height=img_h, preserveAspectRatio=True, anchor='nw')
+        # Szöveg kezdő y kicsit lejjebb
+        y = img_y - 1 * cm
+    else:
+        y = text_top
+
+    # Markdown → sima szöveg sorokra tördelve
+    # Egyszerű megoldás: a md_text sorait wrap-oljuk
     c.setFont("Helvetica", 11)
+    c.setFillColor(colors.black)
 
-    for line in lines:
-        if y < margin:
-            c.showPage()
-            c.setFont("Helvetica", 11)
-            y = height - margin
-        c.drawString(margin, y, line)
-        y -= 14  # sor magasság
+    max_width = width - 2 * margin_x
+    wrapper = textwrap.TextWrapper(width=90)
+
+    for raw_line in md_text.split("\n"):
+        # Üres sor → sortörés
+        if not raw_line.strip():
+            y -= 14
+            if y < 2.5 * cm:
+                new_page()
+            continue
+
+        for line in wrapper.wrap(raw_line):
+            if y < 2.5 * cm:
+                new_page()
+            c.drawString(margin_x, y, line)
+            y -= 14
 
     c.save()
     return filename
 
-# 🔊 Hang mentése WAV fájlba
-def save_audio(text, filename="elemzes.wav"):
+# -------------------------------------------------------------------
+# Hangos felolvasás
+# -------------------------------------------------------------------
+
+def save_analysis_audio(text, meta):
+    safe_name = re.sub(r"[^\w\-]", "_", f"{meta.get('keresztnev','')}_{meta.get('vezeteknev','')}".strip())
+    filename = os.path.join(OUTPUT_DIR, f"{safe_name}_elemzes.wav")
+
     engine = pyttsx3.init()
-    engine.setProperty("rate", 160)
+    engine.setProperty("rate", 155)
+    engine.setProperty("volume", 0.9)
+    # egyszerűbb, természetesebb hangzás: mondatközi szünetekhez a szövegben is lehet pontokat, sortöréseket használni
     engine.save_to_file(text, filename)
     engine.runAndWait()
-
-
-# 🧩 GUI gomb callback
-
-# modulok/elemzes.py
-
-
-def teszt():
-    print("Elemzés modul működik!")
-
-
-
-def save_analysis_pdf(md_text, person_name):
-    # Fájlnév a személy nevéből
-    safe_name = re.sub(r"[^\w\-]", "_", person_name.strip())
-    filename = f"{safe_name}_elemzes.pdf"
-
-    # PDF létrehozása
-    c = canvas.Canvas(filename, pagesize=A4)
-    width, height = A4
-    margin = 2 * cm
-    y = height - margin
-
-    # Szöveg feldarabolása sorokra
-    lines = md_text.split("\n")
-    c.setFont("Helvetica", 11)
-
-    for line in lines:
-        if y < margin:
-            c.showPage()
-            c.setFont("Helvetica", 11)
-            y = height - margin
-        c.drawString(margin, y, line)
-        y -= 14  # sor magasság
-
-    c.save()
     return filename
 
+# -------------------------------------------------------------------
+# Horoszkóp kép generálása (Rashi + yantra)
+# -------------------------------------------------------------------
+
+def generate_chart_image(chart, meta):
+    """
+    Itt feltételezzük, hogy van egy rajzoló függvényed, ami PNG-t készít.
+    Pl.: modulok.visuals.rajzol_del_indiai_horoszkop_svg vagy hasonló.
+    Itt csak egy egységes wrapper-t adunk.
+    """
+    from modulok.visuals import rajzol_del_indiai_horoszkop_svg
+
+    planets = chart.get("planets", {})
+    tithi = chart.get("tithi", 1)
+
+    image_name = f"{meta.get('vezeteknev','').lower()}_{meta.get('keresztnev','').lower()}_horoszkop_{meta.get('horoszkop_nev','D1')}.png"
+    image_path = os.path.join(OUTPUT_DIR, image_name)
+
+    rajzol_del_indiai_horoszkop_svg(
+        planets,
+        tithi,
+        horoszkop_nev=meta.get("horoszkop_nev", "D1"),
+        date_str=meta.get("date_str"),
+        time_str=meta.get("time_str"),
+        vezeteknev=meta.get("vezeteknev"),
+        keresztnev=meta.get("keresztnev"),
+        is_prashna=meta.get("is_prashna", False),
+        output_path=image_path,
+    )
+
+    return image_path
+
+# -------------------------------------------------------------------
+# Fő belépő – teljes elemzés generálása egy gombnyomásra
+# -------------------------------------------------------------------
 
 def generate_full_analysis(
-    date_str,
-    time_str,
-    timezone_str,
-    latitude_str,
-    longitude_str,
-    vezeteknev,
-    keresztnev,
-    varga_nev="D1",
-    is_prashna=False
+    date_str: str,
+    time_str: str,
+    timezone_str: str,
+    latitude: float,
+    longitude: float,
+    vezeteknev: str,
+    keresztnev: str,
+    varga_nev: str = "D1",
+    place_str: str = "",
+    is_prashna: bool = False,
 ):
-    # 🧠 Adatcsomag összeállítása
-    chart_data = build_chart_data(
-        date_str,
-        time_str,
-        timezone_str,
-        latitude_str,
-        longitude_str,
-        vezeteknev,
-        keresztnev,
-        varga_nev,
-        is_prashna,
-    )
+    """
+    Teljes folyamat:
+    - astro_core.generate_chart hívása
+    - Markdown elemzés generálása
+    - PDF mentése (fejléc + lábléc + Rashi+yantra kép)
+    - Hangos felolvasás mentése
+    """
 
-    # 🎨 Horoszkóp rajzolása
-    draw_chart(chart_data)
-
-    # 📄 Markdown elemzés generálása
-    md = generate_markdown_summary(
-        chart_data["planet_data"],
-        chart_data.get("aspektusok", []),
-        chart_data,
-    )
-
-    # 🧭 Purushartha összegzés hozzáfűzése
-    if "purushartha_list" in chart_data:
-        from modulok.tables import purushartha_map
-        md += summarize_purusharthas(chart_data["purushartha_list"])
-
-    # 💾 PDF mentés
-    filename = save_analysis_pdf(md, keresztnev)
-    print(f"PDF mentve: {filename}")
-
-    return chart_data, filename
-def generate_full_analysis_with_visual(chart_data):
-    draw_chart(chart_data)  # 🎨 kép generálás
-
-    # 🖼️ Markdown fejléc kép + metaadat
-    image_name = f"{chart_data['vezeteknev'].lower()}_{chart_data['keresztnev'].lower()}_horoszkop_{chart_data['horoszkop_nev']}.png"
-    md = f"![Horoszkóp](static/{image_name})\n\n"
-    md += f"**Név**: {chart_data['keresztnev']} {chart_data['vezeteknev']}\n"
-    md += f"**Dátum**: {chart_data['date_str']}\n"
-    md += f"**Idő**: {chart_data['time_str']}\n"
-    md += f"**Tithi**: {chart_data['tithi']}\n"
-    md += f"**Horoszkóp típusa**: {chart_data['horoszkop_nev']}\n\n"
-
-    # 🧠 Elemzés
-    md += generate_markdown_summary(
-        chart_data["planet_data"],
-        chart_data.get("aspektusok", []),
-        chart_data,
-    )
-
-    # 🧭 Purushartha összegzés
-    if "purushartha_list" in chart_data:
-        md += summarize_purusharthas(chart_data["purushartha_list"])
-
-    # 💾 PDF mentés
-    filename = save_analysis_pdf(md, chart_data["keresztnev"])
-    print(f"PDF mentve: {filename}")
-    return filename
-    
-def varshaphala_elemzes(szulinap, ev):
-    # Számítás a varshaphala modulból
-    adat = varshaphala_tools.szamit_varshaphala(szulinap, ev)
-    
-    # Szöveges interpretáció
-    szoveg = f"A {ev}. év Varshaphala elemzése:\n"
-    szoveg += f"Ascendens: {adat['asc']}\n"
-    szoveg += f"Főbb bolygóhatások: {adat['bolygok']}\n"
-    szoveg += f"Éves fókusz: {adat['tema']}\n"
-    return szoveg
-
-def enrich_planet_data(subject, chart_data):
-    # Ayanamsa közvetlenül a kerykeionból
-    ayanamsa = subject.ayanamsa
-    chart_data["ayanamsa"] = ayanamsa
-
-    asc_deg = subject.ascendant.lon
-
-    for planet, data in chart_data["planet_data"].items():
-        lon = data["longitude"]
-
-        # 🌌 Nakshatra + Pada (saját astro_core logika marad)
-        nakshatra, pada = calculate_nakshatra(lon, ayanamsa, nakshatras)
-        data["nakshatra"] = nakshatra
-        data["pada"] = pada
-
-        # 🧭 Ház – kerykeionból
-        for house in subject.houses.values():
-            if house.contains(lon):   # kerykeion ház objektum tudja
-                data["house"] = house.number
-                break
-
-        # 👑 Nakshatra ura
-        ura = ""
-        for bolygo, lista in bolygo_nakshatra_map.items():
-            if nakshatra in lista:
-                ura = bolygo
-                break
-        data["nakshatra_ura"] = ura
-
-    return chart_data
-def draw_chart(chart_data):
-    planet_data = chart_data["planet_data"]
-    tithi = chart_data["tithi"]
-
-    # 🎨 Kép generálás
-    rajzol_del_indiai_horoszkop_svg(
-        planet_data,
-        tithi,
-        horoszkop_nev=chart_data.get("horoszkop_nev", "D1"),
-        date_str=chart_data.get("date_str"),
-        time_str=chart_data.get("time_str"),
-        vezeteknev=chart_data.get("vezeteknev"),
-        keresztnev=chart_data.get("keresztnev"),
-        is_prashna=chart_data.get("is_prashna", False),
-    )
-
-
-    # 📄 PDF elemzés
-    md = generate_markdown_summary(
-        chart_data["planet_data"],
-        chart_data.get("aspektusok", []),
-        chart_data,
-    )
-    filename = save_analysis_pdf(md, chart_data["keresztnev"])
-    print(f"PDF mentve: {filename}")
-
-def build_chart_data(
-    date_str,
-    time_str,
-    timezone_str,
-    latitude_str,
-    longitude_str,
-    vezeteknev,
-    keresztnev,
-    varga_nev,
-    is_prashna=False
-):
-    # 🕰️ Dátum és idő konvertálása
+    # 1) Dátum/idő → datetime
     local_dt = pendulum.parse(f"{date_str}T{time_str}", tz=timezone_str)
-    utc_dt = local_dt.in_timezone("UTC")
+    year, month, day = local_dt.year, local_dt.month, local_dt.day
+    hour, minute = local_dt.hour, local_dt.minute
 
-
-    subject = AstrologicalSubject(
-        name="Now",
-        year=now.year,
-        month=now.month,
-        day=now.day,
-        hour=now.hour,
-        minute=now.minute,
-        tz_str="UTC",
-        lng=0.0,
-        lat=0.0,
+    # 2) Astro_core chart generálás
+    chart = astro_core.generate_chart(
+        name=f"{keresztnev} {vezeteknev}",
+        year=year,
+        month=month,
+        day=day,
+        hour=hour,
+        minute=minute,
+        lat=latitude,
+        lng=longitude,
     )
 
-# Ayanamsa érték
-
-    # 🌌 Bolygópozíciók
-    planet_data = {}
-    for name, pid in tables.planet_ids.items():
-        pos, _ = swe.calc_ut(jd_ut, pid)
-        sidereal_pos = (pos[0] - ayanamsa) % 360
-        planet_data[name] = {"longitude": sidereal_pos}
-    planet_data["ASC"] = {"longitude": asc_sidereal}
-
-    # 🌙 Tithi
-    tithi = (
-        int(
-            ((planet_data["Moon"]["longitude"] - planet_data["Sun"]["longitude"]) % 360)
-            / 12
-        )
-        + 1
-    )
-
-    # 🧭 Purushartha lista (opcionális)
-    purushartha_list = []
-    for name, data in planet_data.items():
-        nakshatra, pada = astro_core.calculate_nakshatra(data["longitude"], ayanamsa, tables.nakshatras)
-        purushartha = ["Dharma", "Artha", "Kama", "Moksha"][pada - 1]
-        purushartha_list.append(purushartha)
-
-    return {
-        "planet_data": planet_data,
-        "tithi": tithi,
-        "horoszkop_nev": varga_nev,
+    # 3) Meta adatok
+    meta = {
         "date_str": date_str,
         "time_str": time_str,
         "timezone_str": timezone_str,
@@ -430,9 +365,75 @@ def build_chart_data(
         "longitude": longitude,
         "vezeteknev": vezeteknev,
         "keresztnev": keresztnev,
-        "is_prashna": is_prashna,
         "varga_nev": varga_nev,
-        "purushartha_list": purushartha_list,
+        "horoszkop_nev": varga_nev,
+        "place_str": place_str,
+        "is_prashna": is_prashna,
+        "tithi": chart.get("tithi"),
     }
 
-    return "\n".join(elemzes_riport)
+    # 4) Horoszkóp kép generálása (Rashi + yantra)
+    image_path = generate_chart_image(chart, meta)
+
+    # 5) Markdown elemzés
+    md_text = generate_markdown_summary_from_chart(chart, meta)
+
+    # 6) PDF mentés
+    pdf_path = save_analysis_pdf(md_text, meta, image_path=image_path)
+
+    # 7) Hangos felolvasás
+    audio_path = save_analysis_audio(md_text, meta)
+
+    return {
+        "chart": chart,
+        "markdown": md_text,
+        "pdf_path": pdf_path,
+        "audio_path": audio_path,
+        "image_path": image_path,
+    }
+# modulok/elemzes.py
+
+def generate_varshaphala_forecast_block(varsha_data, age: int):
+    """
+    Egyszerű, érthető éves előrejelzés blokk Varshaphalára.
+    varsha_data: a compute_varshaphala_chart visszatérési dict-je
+    """
+    tithi = varsha_data.get("tithi")
+    chart = varsha_data.get("chart", {})
+    planets = chart.get("planets", {})
+
+    md = "\n---\n\n## 📅 Varshaphala – Éves előrejelzés\n\n"
+    md += f"**Életkor**: {age} év\n\n"
+
+    if tithi is not None:
+        md += f"- **Születésnapi Tithi**: {tithi} – ez mutatja az év alaprezgését, hangulatát.\n"
+
+    asc = chart.get("ascendant", {})
+    if asc:
+        md += f"- **Varshaphala Ascendens**: {asc.get('sign','ismeretlen')} – az év fókuszterülete.\n"
+
+    sun = planets.get("Sun", {})
+    if sun:
+        md += f"- **Nap helyzete az éves képletben**: {sun.get('sign','ismeretlen')} – az év fő témája, önkifejezés.\n"
+
+    saturn = planets.get("Saturn", {})
+    if saturn:
+        md += f"- **Szaturnusz az éves képletben**: {saturn.get('sign','ismeretlen')} – felelősség, próbatételek területe.\n"
+
+    rahu = planets.get("Rahu", {})
+    ketu = planets.get("Ketu", {})
+    if rahu and ketu:
+        md += f"- **Rahu–Ketu tengely az éves képletben**: {rahu.get('sign','?')} – {ketu.get('sign','?')} – karmikus irányváltások.\n"
+
+    md += "\nEz a Varshaphala képlet azt mutatja, hogy ebben az évben mely életterületek kerülnek fókuszba, "
+    md += "hol kér tőled az élet több tudatosságot, felelősséget, és hol nyílnak új lehetőségek.\n"
+
+    return md
+
+    # miután megvan a chart + meta:
+    map_path = generate_karmic_map_svg(chart, meta)
+    print("Karmikus térkép:", map_path)
+
+# Egyszerű teszt
+def teszt():
+    print("Elemzés modul betöltve (új, astro_core-alapú verzió).")
