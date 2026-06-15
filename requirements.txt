@@ -19,3 +19,4 @@ pillow==12.1.1
 pyttsx3==2.99
 svgwrite==1.4.3
 timezonefinder==8.2.4
+pyswisseph
