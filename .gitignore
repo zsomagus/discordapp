@@ -5,3 +5,4 @@ __pycache__/
 import_check.py
 importok.txt
 modulvizsgalo.py
+.env

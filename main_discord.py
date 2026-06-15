@@ -3,7 +3,7 @@ import discord
 from discord.ext import commands
 
 # Token és alapbeállítások
-DISCORD_TOKEN = "MTQ3Mzc1MDQ3OTMyMTMwNTE4MA.GA7g0u.gPqSxEXv6Yw-74V4qx497sA9ASm9aOH1J6KseA"
+DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 
 class KözösségiBot(commands.Bot):
     def __init__(self):
