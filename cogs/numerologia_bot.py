@@ -1,7 +1,7 @@
 import discord
 from discord import app_commands
 from discord.ext import commands
-from modulok import numerologia_full
+from modulok import numerológia_full
 
 class Numerologia(commands.Cog):
     def __init__(self, bot):
