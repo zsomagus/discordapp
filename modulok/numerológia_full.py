@@ -2,7 +2,6 @@ import svgwrite
 import os
 import re
 from collections import Counter
-import cairosvg
 
 # ----------------------- BETŰ MAP -----------------------
 letter_map = {
