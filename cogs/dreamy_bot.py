@@ -4,6 +4,7 @@ from discord import app_commands
 from discord.ext import commands
 # Háttérfunkciók importálása a modulokból
 from modulok.load_alomszotar import load_alomszotar
+from modulok.music_prompt import build_music_prompt
 
 class DreamyCog(commands.Cog):
     def __init__(self, bot):
