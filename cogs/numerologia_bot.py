@@ -20,7 +20,7 @@ class Numerologia(commands.Cog):
         await interaction.response.defer(thinking=True)
 
         # Numerológiai fájlok generálása
-        pdf_path, svg_path = numerologia_full.generate(name, date, time)
+        pdf_path, svg_path = numerológia_full.generate(name, date, time)
 
         # Privát üzenet küldése
         try:
